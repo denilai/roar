@@ -14,7 +14,26 @@ type FilterCriteria struct {
 	Value    string
 }
 
-// ParseFilter разбирает строку вида "path.to.field!=value"
+// Filters - коллекция критериев фильтрации
+type Filters []FilterCriteria
+
+// ParseFilters разбирает список строк фильтров
+func ParseFilters(rawFilters []string) (Filters, error) {
+	var filters Filters
+	for _, raw := range rawFilters {
+		if raw == "" {
+			continue
+		}
+		f, err := ParseFilter(raw)
+		if err != nil {
+			return nil, err
+		}
+		filters = append(filters, *f)
+	}
+	return filters, nil
+}
+
+// ParseFilter разбирает одну строку вида "path.to.field==value"
 func ParseFilter(filterStr string) (*FilterCriteria, error) {
 	if filterStr == "" {
 		return nil, nil
@@ -27,7 +46,7 @@ func ParseFilter(filterStr string) (*FilterCriteria, error) {
 	} else if strings.Contains(filterStr, "==") {
 		op = "=="
 	} else {
-		return nil, fmt.Errorf("invalid filter format: operator not found (supported: ==, !=)")
+		return nil, fmt.Errorf("invalid filter format: operator not found (supported: ==, !=) in '%s'", filterStr)
 	}
 
 	parts := strings.SplitN(filterStr, op, 2)
@@ -45,7 +64,7 @@ func ParseFilter(filterStr string) (*FilterCriteria, error) {
 	}, nil
 }
 
-// MatchNode проверяет, соответствует ли YAML-узел критериям фильтра
+// Match проверяет, соответствует ли YAML-узел критерию
 func (f *FilterCriteria) Match(node *yaml.Node) bool {
 	// Добавлена проверка на nil для безопасности
 	if node == nil {
@@ -67,8 +86,19 @@ func (f *FilterCriteria) Match(node *yaml.Node) bool {
 	}
 }
 
-// getNodeValueByPath ищет строковое значение в yaml.Node по dot-notation пути.
-// Возвращает (значение, true) если найдено, или ("", false) если нет.
+// MatchAll проверяет, соответствует ли YAML-узел ВСЕМ критериям в списке.
+// Возвращает true, если все фильтры прошли успешно.
+// Если какой-то фильтр не прошел, возвращает false и сам критерий, на котором произошел сбой.
+func (fs Filters) MatchAll(node *yaml.Node) (bool, *FilterCriteria) {
+	for _, f := range fs {
+		if !f.Match(node) {
+			return false, &f
+		}
+	}
+	return true, nil
+}
+
+// getNodeValueByPath ищет строковое значение в yaml.Node по dot-notation пути
 func getNodeValueByPath(node *yaml.Node, path string) (string, bool) {
 	if node == nil {
 		return "", false
@@ -109,7 +139,7 @@ func getNodeValueByPath(node *yaml.Node, path string) (string, bool) {
 		}
 
 		if !found {
-			return "", false // Путь не найден
+			return "", false
 		}
 	}
 
