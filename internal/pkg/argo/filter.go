@@ -25,13 +25,15 @@ func ParseFilter(filterStr string) (*FilterCriteria, error) {
 		op = "!="
 	} else if strings.Contains(filterStr, "==") {
 		op = "=="
-	} else if strings.Contains(filterStr, "=") {
-		op = "==" // поддержка одинарного равно для удобства
 	} else {
 		return nil, fmt.Errorf("invalid filter format: operator not found (supported: ==, !=)")
 	}
 
 	parts := strings.SplitN(filterStr, op, 2)
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid filter format: expected 'key%svalue'", op)
+	}
+
 	path := strings.TrimSpace(parts[0])
 	val := strings.TrimSpace(parts[1])
 
