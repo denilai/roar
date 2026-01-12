@@ -82,6 +82,7 @@ metadata:
   labels:
     env: production
     tier: frontend
+    emptyval: ""
 spec:
   source:
     path: charts/my-chart
@@ -96,6 +97,11 @@ spec:
 		filterStr string
 		wantMatch bool
 	}{
+		{
+			name:      "nil node safety check",
+			filterStr: "any==thing",
+			wantMatch: false, // Должно быть false, если node nil, но в этом тесте мы передаем &node. См. отдельный тест ниже.
+		},
 		{
 			name:      "match simple field",
 			filterStr: "metadata.name==test-app",
@@ -117,14 +123,24 @@ spec:
 			wantMatch: true,
 		},
 		{
-			name:      "missing field in inequality (should be true)",
+			name:      "inequality missing field (should be true: missing != val)",
 			filterStr: "metadata.labels.region!=us-east",
-			wantMatch: true, // "пусто" != "us-east" -> true
+			wantMatch: true, 
 		},
 		{
-			name:      "missing field in equality (should be false)",
+			name:      "equality missing field (should be false: missing is not equal to val)",
 			filterStr: "spec.destination.server==https://kubernetes.default.svc",
 			wantMatch: false,
+		},
+		{
+			name:      "equality empty string vs missing field",
+			filterStr: "missing.field==",
+			wantMatch: false, // missing field is NOT equal to empty string
+		},
+		{
+			name:      "equality empty string vs existing empty field",
+			filterStr: "metadata.labels.emptyval==",
+			wantMatch: true, // existing empty field IS equal to empty string
 		},
 		{
 			name:      "deep nesting missing parent",
@@ -135,6 +151,13 @@ spec:
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.name == "nil node safety check" {
+				// Специальный кейс для проверки nil node
+				f, _ := ParseFilter(tt.filterStr)
+				assert.False(t, f.Match(nil), "Should return false for nil node")
+				return
+			}
+
 			f, err := ParseFilter(tt.filterStr)
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantMatch, f.Match(&node))
@@ -142,3 +165,9 @@ spec:
 	}
 }
 
+// Тест на безопасность функции getNodeValueByPath при nil
+func TestGetNodeValueByPath_NilSafety(t *testing.T) {
+	val, found := getNodeValueByPath(nil, "some.path")
+	assert.Equal(t, "", val)
+	assert.False(t, found)
+}

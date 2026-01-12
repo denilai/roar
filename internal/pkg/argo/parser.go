@@ -63,8 +63,6 @@ func ParseApplications(yamlData []byte, filterStr string) ([]Application, error)
 	}
 
 	for {
-		// Декодируем сначала в универсальную Node структуру,
-		// чтобы можно было проверить Kind и произвольные поля фильтра
 		var node yaml.Node
 		err := decoder.Decode(&node)
 		if err == io.EOF {
@@ -74,9 +72,10 @@ func ParseApplications(yamlData []byte, filterStr string) ([]Application, error)
 			return nil, fmt.Errorf("failed to decode yaml document: %w", err)
 		}
 
-		// Проверяем Kind и ApiVersion, используя хелпер
-		kind := getNodeValueByPath(&node, "kind")
-		apiVersion := getNodeValueByPath(&node, "apiVersion")
+		// Обновлено: игнорируем второй аргумент (found), так как здесь нам просто нужно значение
+		// Если поля нет, вернется "", и проверка if ниже сработает корректно.
+		kind, _ := getNodeValueByPath(&node, "kind")
+		apiVersion, _ := getNodeValueByPath(&node, "apiVersion")
 
 		if kind != "Application" || apiVersion != "argoproj.io/v1alpha1" {
 			continue
@@ -85,14 +84,13 @@ func ParseApplications(yamlData []byte, filterStr string) ([]Application, error)
 		// Применяем фильтр
 		if filter != nil {
 			if !filter.Match(&node) {
-				name := getNodeValueByPath(&node, "metadata.name")
+				name, _ := getNodeValueByPath(&node, "metadata.name")
 				// Логируем пропущенные приложения на уровне Info
 				logger.Log.WithField("application", name).Infof("Skipped by filter (%s %s '%s')", filter.Path, filter.Operator, filter.Value)
 				continue
 			}
 		}
 
-		// Если фильтр пройден, декодируем узел в структуру rawApplication для удобной работы
 		var rawApp rawApplication
 		if err := node.Decode(&rawApp); err != nil {
 			return nil, fmt.Errorf("failed to decode node into struct: %w", err)
@@ -229,3 +227,4 @@ func extractKeyValueFromWerfSet(s string) (string, string) {
 	}
 	return "", ""
 }
+
