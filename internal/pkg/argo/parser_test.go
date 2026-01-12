@@ -84,7 +84,7 @@ spec: {}
 			apps, err := ParseApplications([]byte(yamlInput), tc.filter)
 			require.NoError(t, err)
 
-			var names []string
+			names := []string{}
 			for _, app := range apps {
 				names = append(names, app.Name)
 			}
@@ -181,7 +181,6 @@ spec: {source: {targetRevision: "dev"}}
 				require.NoError(t, err)
 				require.Len(t, apps, tc.expectedAppCount)
 				if tc.expectedAppCount > 0 {
-					// Просто выборочная проверка, что что-то распарсилось
 					require.NotEmpty(t, apps[0].Name)
 				}
 			}
@@ -227,7 +226,7 @@ func TestNewApplicationFromRaw(t *testing.T) {
 				Env:            "dev-label",
 				TargetRevision: "main",
 				RepoURL:        "https://default.repo",
-				Path:           ".", // Ожидаемый fallback
+				Path:           ".",
 				Setters:        map[string]string{},
 				ValuesFiles:    []string{},
 			},
@@ -320,8 +319,8 @@ func TestNewApplicationFromRaw(t *testing.T) {
 				app := baseRawApp()
 				app.Metadata.Annotations["rawRepository"] = "https://anno.repo"
 				app.Metadata.Annotations["rawPath"] = "anno/path"
-				app.Spec.Source.RepoURL = "https://spec.repo" // Это значение должно быть проигнорировано
-				app.Spec.Source.Path = "spec/path"            // И это тоже
+				app.Spec.Source.RepoURL = "https://spec.repo"
+				app.Spec.Source.Path = "spec/path"
 				return app
 			}(),
 			expectedApp: Application{
@@ -337,7 +336,6 @@ func TestNewApplicationFromRaw(t *testing.T) {
 			name: "fallback to spec.source for repo and path",
 			inputRawApp: func() rawApplication {
 				app := baseRawApp()
-				// Удаляем аннотации по умолчанию
 				app.Metadata.Annotations = map[string]string{}
 				app.Spec.Source.RepoURL = "https://spec.repo"
 				app.Spec.Source.Path = "spec/path"
@@ -356,7 +354,7 @@ func TestNewApplicationFromRaw(t *testing.T) {
 			name: "path falls back to '.' if all sources are empty",
 			inputRawApp: func() rawApplication {
 				app := baseRawApp()
-				app.Spec.Source.Path = "" // Убеждаемся, что spec.path тоже пуст
+				app.Spec.Source.Path = ""
 				return app
 			}(),
 			expectedApp: Application{
@@ -417,7 +415,7 @@ func TestNewApplicationFromRaw(t *testing.T) {
 					Env: []EnvVar{
 						{Name: "WERF_SET_IMAGE_TAG", Value: "global.image.tag=v1.2.3"},
 						{Name: "WERF_SET_REPLICA_COUNT", Value: "frontend.replicaCount=3"},
-						{Name: "WERF_SET_INVALID", Value: "no-equals-sign"}, // Должно быть проигнорировано
+						{Name: "WERF_SET_INVALID", Value: "no-equals-sign"},
 					},
 				}
 				return app
@@ -444,7 +442,6 @@ func TestNewApplicationFromRaw(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// **ИСПРАВЛЕНИЕ:** Вместо nil передаем настоящий экземпляр логгера.
 			cleanApp, err := newApplicationFromRaw(tc.inputRawApp, logCtx)
 
 			if tc.expectError {
@@ -454,7 +451,6 @@ func TestNewApplicationFromRaw(t *testing.T) {
 				}
 			} else {
 				require.NoError(t, err)
-				// Сравниваем структуры целиком для максимальной точности
 				require.Equal(t, tc.expectedApp, cleanApp)
 			}
 		})

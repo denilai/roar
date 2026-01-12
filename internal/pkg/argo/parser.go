@@ -82,11 +82,12 @@ func ParseApplications(yamlData []byte, filterStr string) ([]Application, error)
 			continue
 		}
 
-		// Применяем фильтр, если он задан
+		// Применяем фильтр
 		if filter != nil {
 			if !filter.Match(&node) {
 				name := getNodeValueByPath(&node, "metadata.name")
-				logger.Log.Debugf("Application '%s' skipped by filter", name)
+				// Логируем пропущенные приложения на уровне Info
+				logger.Log.WithField("application", name).Infof("Skipped by filter (%s %s '%s')", filter.Path, filter.Operator, filter.Value)
 				continue
 			}
 		}
