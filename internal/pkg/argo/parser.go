@@ -59,7 +59,7 @@ func ParseApplications(yamlData []byte, filterStr string) ([]Application, error)
 		return nil, fmt.Errorf("failed to parse filter: %w", err)
 	}
 	if filter != nil {
-		logger.Log.Infof("Applying filter: %s %s '%s'", filter.Path, filter.Operator, filter.Value)
+		logger.Log.Infof("Applying filter configuration: %s %s '%s'", filter.Path, filter.Operator, filter.Value)
 	}
 
 	for {
@@ -72,8 +72,7 @@ func ParseApplications(yamlData []byte, filterStr string) ([]Application, error)
 			return nil, fmt.Errorf("failed to decode yaml document: %w", err)
 		}
 
-		// Обновлено: игнорируем второй аргумент (found), так как здесь нам просто нужно значение
-		// Если поля нет, вернется "", и проверка if ниже сработает корректно.
+		// Игнорируем второй аргумент (found), нам нужно только значение для проверки типа
 		kind, _ := getNodeValueByPath(&node, "kind")
 		apiVersion, _ := getNodeValueByPath(&node, "apiVersion")
 
@@ -81,11 +80,24 @@ func ParseApplications(yamlData []byte, filterStr string) ([]Application, error)
 			continue
 		}
 
-		// Применяем фильтр
+		// Логика фильтрации с подробным выводом
 		if filter != nil {
+			// Предварительно извлекаем значение для логирования (для отладки)
+			actualVal, found := getNodeValueByPath(&node, filter.Path)
+			name, _ := getNodeValueByPath(&node, "metadata.name")
+
+			logFields := logrus.Fields{
+				"app":         name,
+				"filterPath":  filter.Path,
+				"foundValue":  actualVal,
+				"fieldExists": found,
+				"expected":    filter.Value,
+				"operator":    filter.Operator,
+			}
+
+			logger.Log.WithFields(logFields).Info("Checking filter criteria")
+
 			if !filter.Match(&node) {
-				name, _ := getNodeValueByPath(&node, "metadata.name")
-				// Логируем пропущенные приложения на уровне Info
 				logger.Log.WithField("application", name).Infof("Skipped by filter (%s %s '%s')", filter.Path, filter.Operator, filter.Value)
 				continue
 			}
@@ -227,4 +239,3 @@ func extractKeyValueFromWerfSet(s string) (string, string) {
 	}
 	return "", ""
 }
-
