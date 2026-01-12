@@ -18,7 +18,7 @@ type Config struct {
 	ValuesFiles []string
 	OutputDir   string
 	LogLevel    string
-	Filter      string
+	Filters     []string
 	tempDir_    string
 }
 
@@ -49,7 +49,8 @@ func Run(cfg Config) error {
 		return fmt.Errorf("failed to create output directory %s: %w", cfg.OutputDir, err)
 	}
 
-	applications, err := renderAndParseAppOfApps(cfg.ChartPath, cfg.ValuesFiles, cfg.Filter)
+	// Передаем список фильтров
+	applications, err := renderAndParseAppOfApps(cfg.ChartPath, cfg.ValuesFiles, cfg.Filters)
 	if err != nil {
 		return fmt.Errorf("initialization failed: %w", err)
 	}
@@ -71,7 +72,7 @@ func Run(cfg Config) error {
 	return nil
 }
 
-func renderAndParseAppOfApps(chartPath string, valuesFiles []string, filterStr string) ([]argo.Application, error) {
+func renderAndParseAppOfApps(chartPath string, valuesFiles []string, filters []string) ([]argo.Application, error) {
 	logger.Log.Info("Rendering the main 'app-of-apps' chart...")
 	appOfAppsOpts := helm.RenderOptions{ReleaseName: "app-of-apps", ChartPath: chartPath, ValuesFiles: valuesFiles}
 	appOfAppsManifests, err := helm.Template(appOfAppsOpts)
@@ -80,7 +81,8 @@ func renderAndParseAppOfApps(chartPath string, valuesFiles []string, filterStr s
 	}
 
 	logger.Log.Info("Parsing for Argo CD applications...")
-	applications, err := argo.ParseApplications(appOfAppsManifests, filterStr)
+	// Передаем filters (slice) в парсер
+	applications, err := argo.ParseApplications(appOfAppsManifests, filters)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse Argo applications: %w", err)
 	}

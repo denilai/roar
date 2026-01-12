@@ -73,6 +73,16 @@ func TestParseFilter(t *testing.T) {
 	}
 }
 
+func TestParseFilters(t *testing.T) {
+	// Проверка парсинга нескольких фильтров
+	raw := []string{"a==1", "b!=2"}
+	filters, err := ParseFilters(raw)
+	require.NoError(t, err)
+	require.Len(t, filters, 2)
+	assert.Equal(t, "a", filters[0].Path)
+	assert.Equal(t, "b", filters[1].Path)
+}
+
 func TestFilterMatch(t *testing.T) {
 	yamlStr := `
 apiVersion: argoproj.io/v1alpha1
@@ -125,7 +135,7 @@ spec:
 		{
 			name:      "inequality missing field (should be true: missing != val)",
 			filterStr: "metadata.labels.region!=us-east",
-			wantMatch: true, 
+			wantMatch: true,
 		},
 		{
 			name:      "equality missing field (should be false: missing is not equal to val)",

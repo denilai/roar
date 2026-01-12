@@ -50,16 +50,20 @@ type rawApplication struct {
 	} `yaml:"spec"`
 }
 
-func ParseApplications(yamlData []byte, filterStr string) ([]Application, error) {
+// ParseApplications теперь принимает слайс строк фильтров
+func ParseApplications(yamlData []byte, filterStrs []string) ([]Application, error) {
 	var finalApps []Application
 	decoder := yaml.NewDecoder(bytes.NewReader(yamlData))
 
-	filter, err := ParseFilter(filterStr)
+	filters, err := ParseFilters(filterStrs)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse filter: %w", err)
+		return nil, fmt.Errorf("failed to parse filters: %w", err)
 	}
-	if filter != nil {
-		logger.Log.Infof("Applying filter configuration: %s %s '%s'", filter.Path, filter.Operator, filter.Value)
+
+	if len(filters) > 0 {
+		for _, f := range filters {
+			logger.Log.Infof("Active filter: %s %s '%s'", f.Path, f.Operator, f.Value)
+		}
 	}
 
 	for {
@@ -72,7 +76,7 @@ func ParseApplications(yamlData []byte, filterStr string) ([]Application, error)
 			return nil, fmt.Errorf("failed to decode yaml document: %w", err)
 		}
 
-		// Игнорируем второй аргумент (found), нам нужно только значение для проверки типа
+		// Быстрая проверка типа ресурса
 		kind, _ := getNodeValueByPath(&node, "kind")
 		apiVersion, _ := getNodeValueByPath(&node, "apiVersion")
 
@@ -80,25 +84,26 @@ func ParseApplications(yamlData []byte, filterStr string) ([]Application, error)
 			continue
 		}
 
-		// Логика фильтрации с подробным выводом
-		if filter != nil {
-			// Предварительно извлекаем значение для логирования (для отладки)
-			actualVal, found := getNodeValueByPath(&node, filter.Path)
-			name, _ := getNodeValueByPath(&node, "metadata.name")
+		name, _ := getNodeValueByPath(&node, "metadata.name")
 
+		// Применяем все фильтры
+		if len(filters) > 0 {
+			// Для отладки логируем значения всех полей, участвующих в фильтрах
 			logFields := logrus.Fields{
-				"app":         name,
-				"filterPath":  filter.Path,
-				"foundValue":  actualVal,
-				"fieldExists": found,
-				"expected":    filter.Value,
-				"operator":    filter.Operator,
+				"app": name,
 			}
+			for i, f := range filters {
+				val, found := getNodeValueByPath(&node, f.Path)
+				logFields[fmt.Sprintf("filter_%d_path", i)] = f.Path
+				logFields[fmt.Sprintf("filter_%d_found", i)] = val
+				logFields[fmt.Sprintf("filter_%d_exists", i)] = found
+			}
+			logger.Log.WithFields(logFields).Info("Checking filters")
 
-			logger.Log.WithFields(logFields).Info("Checking filter criteria")
-
-			if !filter.Match(&node) {
-				logger.Log.WithField("application", name).Infof("Skipped by filter (%s %s '%s')", filter.Path, filter.Operator, filter.Value)
+			// Проверяем совпадение
+			passed, failedFilter := filters.MatchAll(&node)
+			if !passed {
+				logger.Log.WithField("application", name).Infof("Skipped by filter (%s %s '%s')", failedFilter.Path, failedFilter.Operator, failedFilter.Value)
 				continue
 			}
 		}

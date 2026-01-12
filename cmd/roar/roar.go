@@ -16,13 +16,14 @@ func main() {
 
 	versionFlag := pflag.BoolP("version", "v", false, "Print version information and exit")
 	cfg := app.Config{}
-
+	
 	pflag.StringSliceVarP(&cfg.ValuesFiles, "values", "f", []string{}, "Path to a values file for the app-of-apps chart (can be repeated)")
 	pflag.StringVarP(&cfg.OutputDir, "output-dir", "o", "rendered", "Directory to save rendered manifests")
 	pflag.StringVarP(&cfg.LogLevel, "log-level", "l", "warn", "Log level (debug, info, warn, error)")
-
-	// Новый флаг
-	pflag.StringVar(&cfg.Filter, "filter", "", "Filter applications by field (e.g. spec.source.targetRevision!=master)")
+	
+	// Используем StringSliceVar для поддержки множественных флагов
+	// Пример: --filter "a==b" --filter "c!=d"
+	pflag.StringSliceVar(&cfg.Filters, "filter", []string{}, "Filter applications by field (e.g. spec.source.targetRevision==master). Can be repeated.")
 
 	roar := "roar"
 
@@ -59,3 +60,4 @@ func main() {
 		logger.Log.Fatalf("Application failed: %v", err)
 	}
 }
+

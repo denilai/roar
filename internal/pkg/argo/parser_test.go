@@ -14,75 +14,80 @@ import (
 func init() {
 	logger.Log = logrus.New()
 	logger.Log.SetOutput(io.Discard)
+	// Раскомментируйте строку ниже для отладки
+	// logger.Log.SetOutput(os.Stdout)
 }
 
-func TestParseApplicationsWithFilter(t *testing.T) {
+func TestParseApplicationsWithFilters(t *testing.T) {
 	yamlInput := `
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: app-master
-  annotations: {rawRepository: "repo"}
+  name: app-master-prod
+  labels: {env: prod}
+  annotations: {rawRepository: "https://git.example.com/repo.git"}
 spec:
-  source:
-    targetRevision: master
+  source: {targetRevision: master}
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: app-dev
-  annotations: {rawRepository: "repo"}
+  name: app-master-dev
+  labels: {env: dev}
+  annotations: {rawRepository: "https://git.example.com/repo.git"}
 spec:
-  source:
-    targetRevision: dev
+  source: {targetRevision: master}
 ---
 apiVersion: argoproj.io/v1alpha1
-kind: AppProject
+kind: Application
 metadata:
-  name: project-ignored
-spec: {}
+  name: app-feature-dev
+  labels: {env: dev}
+  annotations: {rawRepository: "https://git.example.com/repo.git"}
+spec:
+  source: {targetRevision: feature}
 `
 
 	tests := []struct {
 		name          string
-		filter        string
+		filters       []string
 		expectedNames []string
 	}{
 		{
-			name:          "no filter",
-			filter:        "",
-			expectedNames: []string{"app-master", "app-dev"},
+			name:          "no filters",
+			filters:       nil,
+			expectedNames: []string{"app-master-prod", "app-master-dev", "app-feature-dev"},
 		},
 		{
-			name:          "filter equals master",
-			filter:        "spec.source.targetRevision==master",
-			expectedNames: []string{"app-master"},
+			name:          "single filter (master)",
+			filters:       []string{"spec.source.targetRevision==master"},
+			expectedNames: []string{"app-master-prod", "app-master-dev"},
 		},
 		{
-			name:          "filter not equals master",
-			filter:        "spec.source.targetRevision!=master",
-			expectedNames: []string{"app-dev"},
+			name:          "multiple filters (AND logic: master AND dev)",
+			filters:       []string{"spec.source.targetRevision==master", "metadata.labels.env==dev"},
+			expectedNames: []string{"app-master-dev"},
 		},
 		{
-			name:          "filter by name",
-			filter:        "metadata.name==app-dev",
-			expectedNames: []string{"app-dev"},
+			name:          "multiple filters (AND logic: master AND prod)",
+			filters:       []string{"spec.source.targetRevision==master", "metadata.labels.env==prod"},
+			expectedNames: []string{"app-master-prod"},
 		},
 		{
-			name:          "filter by non-existent field",
-			filter:        "spec.source.missing!=foo",
-			expectedNames: []string{"app-master", "app-dev"}, // "пусто" != "foo" -> true
+			name:          "conflicting filters (returns nothing)",
+			filters:       []string{"metadata.labels.env==prod", "metadata.labels.env==dev"},
+			expectedNames: []string{},
 		},
 		{
-			name:          "filter by non-existent field equals",
-			filter:        "spec.source.missing==foo",
-			expectedNames: []string{}, // "пусто" == "foo" -> false
+			name:          "exclude filter",
+			filters:       []string{"metadata.labels.env!=prod"},
+			expectedNames: []string{"app-master-dev", "app-feature-dev"},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			apps, err := ParseApplications([]byte(yamlInput), tc.filter)
+			apps, err := ParseApplications([]byte(yamlInput), tc.filters)
 			require.NoError(t, err)
 
 			names := []string{}
@@ -94,7 +99,6 @@ spec: {}
 	}
 }
 
-// TestParseApplications_LogSkipped проверяет, что пропущенные приложения логируются
 func TestParseApplications_LogSkipped(t *testing.T) {
 	var logBuffer bytes.Buffer
 	originalOut := logger.Log.Out
@@ -124,7 +128,7 @@ spec:
     targetRevision: dev
 `
 
-	apps, err := ParseApplications([]byte(yamlInput), "spec.source.targetRevision==master")
+	apps, err := ParseApplications([]byte(yamlInput), []string{"spec.source.targetRevision==master"})
 	require.NoError(t, err)
 
 	require.Len(t, apps, 1)
@@ -209,7 +213,7 @@ spec: {source: {targetRevision: "dev"}}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			apps, err := ParseApplications([]byte(tc.inputYAML), "")
+			apps, err := ParseApplications([]byte(tc.inputYAML), nil)
 
 			if tc.expectError {
 				require.Error(t, err)
@@ -511,7 +515,7 @@ func TestExtractAndSortValuesFiles(t *testing.T) {
 		"val-0.yaml",
 		"val-1.yaml",
 		"val-2.yaml",
-		"val-10.yaml", // Если бы сортировка была строковой, "10" было бы перед "2"
+		"val-10.yaml",
 	}
 
 	require.Equal(t, expected, sorted, "Values files should be sorted numerically by index")
