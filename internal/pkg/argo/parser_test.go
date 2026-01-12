@@ -471,8 +471,6 @@ func TestNewApplicationFromRaw(t *testing.T) {
 		},
 	}
 
-	// Создаем логгер-пустышку, который будет использоваться во всех суб-тестах.
-	// Его вывод направлен в io.Discard, чтобы не засорять вывод тестов.
 	testLogger := logrus.New()
 	testLogger.SetOutput(io.Discard)
 	logCtx := logrus.NewEntry(testLogger)
@@ -492,4 +490,29 @@ func TestNewApplicationFromRaw(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestExtractAndSortValuesFiles(t *testing.T) {
+	// Создаем фиктивный логгер
+	logger.Log.SetOutput(io.Discard)
+	logCtx := logger.Log.WithField("test", "sorting")
+
+	envVars := []EnvVar{
+		{Name: "WERF_VALUES_10", Value: "val-10.yaml"},
+		{Name: "WERF_VALUES_2", Value: "val-2.yaml"},
+		{Name: "WERF_VALUES_1", Value: "val-1.yaml"},
+		{Name: "WERF_VALUES_0", Value: "val-0.yaml"},
+		{Name: "IRRELEVANT_VAR", Value: "foo"},
+	}
+
+	sorted := extractAndSortValuesFiles(envVars, logCtx)
+
+	expected := []string{
+		"val-0.yaml",
+		"val-1.yaml",
+		"val-2.yaml",
+		"val-10.yaml", // Если бы сортировка была строковой, "10" было бы перед "2"
+	}
+
+	require.Equal(t, expected, sorted, "Values files should be sorted numerically by index")
 }
