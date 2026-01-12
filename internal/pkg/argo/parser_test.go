@@ -15,6 +15,84 @@ func init() {
 	logger.Log.SetOutput(io.Discard)
 }
 
+func TestParseApplicationsWithFilter(t *testing.T) {
+	yamlInput := `
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app-master
+  annotations: {rawRepository: "repo"}
+spec:
+  source:
+    targetRevision: master
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app-dev
+  annotations: {rawRepository: "repo"}
+spec:
+  source:
+    targetRevision: dev
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: project-ignored
+spec: {}
+`
+
+	tests := []struct {
+		name          string
+		filter        string
+		expectedNames []string
+	}{
+		{
+			name:          "no filter",
+			filter:        "",
+			expectedNames: []string{"app-master", "app-dev"},
+		},
+		{
+			name:          "filter equals master",
+			filter:        "spec.source.targetRevision==master",
+			expectedNames: []string{"app-master"},
+		},
+		{
+			name:          "filter not equals master",
+			filter:        "spec.source.targetRevision!=master",
+			expectedNames: []string{"app-dev"},
+		},
+		{
+			name:          "filter by name",
+			filter:        "metadata.name==app-dev",
+			expectedNames: []string{"app-dev"},
+		},
+		{
+			name:          "filter by non-existent field",
+			filter:        "spec.source.missing!=foo",
+			expectedNames: []string{"app-master", "app-dev"}, // "пусто" != "foo" -> true
+		},
+		{
+			name:          "filter by non-existent field equals",
+			filter:        "spec.source.missing==foo",
+			expectedNames: []string{}, // "пусто" == "foo" -> false
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			apps, err := ParseApplications([]byte(yamlInput), tc.filter)
+			require.NoError(t, err)
+
+			var names []string
+			for _, app := range apps {
+				names = append(names, app.Name)
+			}
+			require.Equal(t, tc.expectedNames, names)
+		})
+	}
+}
+
 // TestParseApplications проверяет высокоуровневую логику:
 // - Обработку нескольких YAML-документов.
 // - Фильтрацию только ресурсов типа Application.
@@ -91,7 +169,8 @@ spec: {source: {targetRevision: "dev"}}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			apps, err := ParseApplications([]byte(tc.inputYAML))
+			// Добавлен пустой фильтр ""
+			apps, err := ParseApplications([]byte(tc.inputYAML), "")
 
 			if tc.expectError {
 				require.Error(t, err)

@@ -50,13 +50,23 @@ type rawApplication struct {
 	} `yaml:"spec"`
 }
 
-func ParseApplications(yamlData []byte) ([]Application, error) {
+func ParseApplications(yamlData []byte, filterStr string) ([]Application, error) {
 	var finalApps []Application
 	decoder := yaml.NewDecoder(bytes.NewReader(yamlData))
 
+	filter, err := ParseFilter(filterStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse filter: %w", err)
+	}
+	if filter != nil {
+		logger.Log.Infof("Applying filter: %s %s '%s'", filter.Path, filter.Operator, filter.Value)
+	}
+
 	for {
-		var rawApp rawApplication
-		err := decoder.Decode(&rawApp)
+		// Декодируем сначала в универсальную Node структуру,
+		// чтобы можно было проверить Kind и произвольные поля фильтра
+		var node yaml.Node
+		err := decoder.Decode(&node)
 		if err == io.EOF {
 			break
 		}
@@ -64,14 +74,35 @@ func ParseApplications(yamlData []byte) ([]Application, error) {
 			return nil, fmt.Errorf("failed to decode yaml document: %w", err)
 		}
 
-		if rawApp.ApiVersion == "argoproj.io/v1alpha1" && rawApp.Kind == "Application" {
-			logCtx := logger.Log.WithField("application", rawApp.Metadata.Name)
-			cleanApp, err := newApplicationFromRaw(rawApp, logCtx)
-			if err != nil {
-				return nil, fmt.Errorf("application '%s' is invalid: %w", rawApp.Metadata.Name, err)
-			}
-			finalApps = append(finalApps, cleanApp)
+		// Проверяем Kind и ApiVersion, используя хелпер
+		kind := getNodeValueByPath(&node, "kind")
+		apiVersion := getNodeValueByPath(&node, "apiVersion")
+
+		if kind != "Application" || apiVersion != "argoproj.io/v1alpha1" {
+			continue
 		}
+
+		// Применяем фильтр, если он задан
+		if filter != nil {
+			if !filter.Match(&node) {
+				name := getNodeValueByPath(&node, "metadata.name")
+				logger.Log.Debugf("Application '%s' skipped by filter", name)
+				continue
+			}
+		}
+
+		// Если фильтр пройден, декодируем узел в структуру rawApplication для удобной работы
+		var rawApp rawApplication
+		if err := node.Decode(&rawApp); err != nil {
+			return nil, fmt.Errorf("failed to decode node into struct: %w", err)
+		}
+
+		logCtx := logger.Log.WithField("application", rawApp.Metadata.Name)
+		cleanApp, err := newApplicationFromRaw(rawApp, logCtx)
+		if err != nil {
+			return nil, fmt.Errorf("application '%s' is invalid: %w", rawApp.Metadata.Name, err)
+		}
+		finalApps = append(finalApps, cleanApp)
 	}
 
 	return finalApps, nil
