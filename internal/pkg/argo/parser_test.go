@@ -124,7 +124,7 @@ spec:
     targetRevision: dev
 `
 
-	apps, err := ParseApplications([]byte(yamlInput), "spec.source.targetRevision=master")
+	apps, err := ParseApplications([]byte(yamlInput), "spec.source.targetRevision==master")
 	require.NoError(t, err)
 
 	require.Len(t, apps, 1)
@@ -133,7 +133,7 @@ spec:
 	logOutput := logBuffer.String()
 	require.Contains(t, logOutput, "Skipped by filter")
 	require.Contains(t, logOutput, "app-to-skip")
-	require.Contains(t, logOutput, "spec.source.targetRevision == master")
+	require.Contains(t, logOutput, "spec.source.targetRevision == 'master'")
 }
 
 // TestParseApplications проверяет высокоуровневую логику парсинга
