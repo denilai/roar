@@ -1,6 +1,7 @@
 package argo
 
 import (
+	"bytes"
 	"io"
 	"testing"
 
@@ -93,10 +94,49 @@ spec: {}
 	}
 }
 
-// TestParseApplications проверяет высокоуровневую логику:
-// - Обработку нескольких YAML-документов.
-// - Фильтрацию только ресурсов типа Application.
-// - Обработку некорректного YAML.
+// TestParseApplications_LogSkipped проверяет, что пропущенные приложения логируются
+func TestParseApplications_LogSkipped(t *testing.T) {
+	var logBuffer bytes.Buffer
+	originalOut := logger.Log.Out
+	logger.Log.SetOutput(&logBuffer)
+	logger.Log.SetLevel(logrus.InfoLevel)
+	defer func() {
+		logger.Log.SetOutput(originalOut)
+	}()
+
+	yamlInput := `
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app-to-keep
+  annotations: {rawRepository: "repo"}
+spec:
+  source:
+    targetRevision: master
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app-to-skip
+  annotations: {rawRepository: "repo"}
+spec:
+  source:
+    targetRevision: dev
+`
+
+	apps, err := ParseApplications([]byte(yamlInput), "spec.source.targetRevision=master")
+	require.NoError(t, err)
+
+	require.Len(t, apps, 1)
+	require.Equal(t, "app-to-keep", apps[0].Name)
+
+	logOutput := logBuffer.String()
+	require.Contains(t, logOutput, "Skipped by filter")
+	require.Contains(t, logOutput, "app-to-skip")
+	require.Contains(t, logOutput, "spec.source.targetRevision == master")
+}
+
+// TestParseApplications проверяет высокоуровневую логику парсинга
 func TestParseApplications(t *testing.T) {
 	testCases := []struct {
 		name             string
@@ -169,7 +209,6 @@ spec: {source: {targetRevision: "dev"}}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Добавлен пустой фильтр ""
 			apps, err := ParseApplications([]byte(tc.inputYAML), "")
 
 			if tc.expectError {
@@ -188,9 +227,7 @@ spec: {source: {targetRevision: "dev"}}
 	}
 }
 
-// TestNewApplicationFromRaw проверяет всю внутреннюю логику преобразования
-// одной структуры rawApplication в чистую Application.
-// Здесь мы полностью избегаем YAML и работаем с объектами Go.
+// TestNewApplicationFromRaw проверяет внутреннюю логику преобразования
 func TestNewApplicationFromRaw(t *testing.T) {
 	baseRawApp := func() rawApplication {
 		var app rawApplication

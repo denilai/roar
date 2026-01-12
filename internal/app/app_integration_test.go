@@ -146,3 +146,74 @@ spec:
 	require.Contains(t, cmdLog, "--set global.replicaCount=3")
 	require.Contains(t, cmdLog, filepath.Join(clonesDir, "clone-1", "stable", "my-service", ".helm"))
 }
+
+func TestAppRun_Integration_WithFilter(t *testing.T) {
+	cmdLogPath, cleanup := setupIntegrationTest(t)
+	defer cleanup()
+
+	testRootDir := t.TempDir()
+	outputDir := filepath.Join(testRootDir, "output")
+	appOfAppsDir := filepath.Join(testRootDir, "app-of-apps-chart")
+	clonesDir := filepath.Join(testRootDir, "clones")
+
+	fakeRepoPath := createFakeGitRepo(t)
+
+	require.NoError(t, os.MkdirAll(filepath.Join(appOfAppsDir, "templates"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(appOfAppsDir, "Chart.yaml"), []byte("apiVersion: v2\nname: root-chart\nversion: 0.1.0"), 0644))
+
+	// Генерируем шаблон с ДВУМЯ приложениями
+	appOfAppsTemplate := fmt.Sprintf(`
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app-prod
+  labels: {env: prod}
+  annotations:
+    rawRepository: "%[1]s"
+    rawPath: "stable/my-service"
+spec:
+  source:
+    targetRevision: master
+    plugin: {env: []}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app-dev
+  labels: {env: dev}
+  annotations:
+    rawRepository: "%[1]s"
+    rawPath: "stable/my-service"
+spec:
+  source:
+    targetRevision: dev
+    plugin: {env: []}
+`, fakeRepoPath)
+
+	require.NoError(t, os.WriteFile(filepath.Join(appOfAppsDir, "templates", "apps.yaml"), []byte(appOfAppsTemplate), 0644))
+
+	cfg := Config{
+		ChartPath: appOfAppsDir,
+		OutputDir: outputDir,
+		tempDir_:  clonesDir,
+		Filter:    "spec.source.targetRevision=master", // Фильтруем только master
+		LogLevel:  "info",
+	}
+
+	err := Run(cfg)
+	require.NoError(t, err)
+
+	// 1. Файл для app-prod должен существовать
+	require.FileExists(t, filepath.Join(outputDir, "prod", "app-prod.yaml"))
+
+	// 2. Файл для app-dev НЕ должен существовать
+	require.NoFileExists(t, filepath.Join(outputDir, "dev", "app-dev.yaml"))
+
+	// 3. Проверяем лог команд Helm
+	cmdLogContent, err := os.ReadFile(cmdLogPath)
+	require.NoError(t, err)
+	cmdLog := string(cmdLogContent)
+
+	require.Contains(t, cmdLog, "helm template app-prod")
+	require.NotContains(t, cmdLog, "helm template app-dev")
+}
