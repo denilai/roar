@@ -21,6 +21,7 @@ func ParseFilter(filterStr string) (*FilterCriteria, error) {
 	}
 
 	var op string
+
 	if strings.Contains(filterStr, "!=") {
 		op = "!="
 	} else if strings.Contains(filterStr, "==") {
@@ -46,37 +47,57 @@ func ParseFilter(filterStr string) (*FilterCriteria, error) {
 
 // MatchNode проверяет, соответствует ли YAML-узел критериям фильтра
 func (f *FilterCriteria) Match(node *yaml.Node) bool {
-	// Получаем значение из YAML по пути (например, "spec.source.targetRevision")
-	nodeVal := getNodeValueByPath(node, f.Path)
+	// Добавлена проверка на nil для безопасности
+	if node == nil {
+		return false
+	}
+
+	// Получаем значение и флаг существования поля
+	nodeVal, found := getNodeValueByPath(node, f.Path)
 
 	switch f.Operator {
 	case "==":
-		return nodeVal == f.Value
+		// При строгом равенстве поле ОБЯЗАНО существовать
+		return found && nodeVal == f.Value
 	case "!=":
-		return nodeVal != f.Value
+		// При неравенстве: либо поля нет совсем, либо оно есть и не совпадает
+		return !found || nodeVal != f.Value
 	default:
 		return true
 	}
 }
 
-// getNodeValueByPath ищет строковое значение в yaml.Node по dot-notation пути
-func getNodeValueByPath(node *yaml.Node, path string) string {
+// getNodeValueByPath ищет строковое значение в yaml.Node по dot-notation пути.
+// Возвращает (значение, true) если найдено, или ("", false) если нет.
+func getNodeValueByPath(node *yaml.Node, path string) (string, bool) {
+	if node == nil {
+		return "", false
+	}
+
 	parts := strings.Split(path, ".")
 	current := node
 
 	// Если это DocumentNode, переходим к его контенту (обычно MappingNode)
-	if current.Kind == yaml.DocumentNode && len(current.Content) > 0 {
+	if current.Kind == yaml.DocumentNode {
+		if len(current.Content) == 0 {
+			return "", false
+		}
 		current = current.Content[0]
 	}
 
 	for _, part := range parts {
 		if current.Kind != yaml.MappingNode {
-			return ""
+			return "", false
 		}
 
 		found := false
 		// В MappingNode Content лежит плоско: [Key1, Val1, Key2, Val2, ...]
 		for i := 0; i < len(current.Content); i += 2 {
+			// Защита от выхода за границы массива (на случай битого YAML)
+			if i+1 >= len(current.Content) {
+				break
+			}
+
 			keyNode := current.Content[i]
 			valNode := current.Content[i+1]
 
@@ -88,9 +109,9 @@ func getNodeValueByPath(node *yaml.Node, path string) string {
 		}
 
 		if !found {
-			return "" // Путь не найден
+			return "", false // Путь не найден
 		}
 	}
 
-	return current.Value
+	return current.Value, true
 }
