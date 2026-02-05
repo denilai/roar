@@ -127,6 +127,7 @@ go test -v -tags=integration ./...
 -   `--output-dir` (`-o`): Директория для сохранения итоговых манифестов (по умолчанию: `rendered`).
 -   `--filter`: Условие для выборки приложений. Флаг можно указывать несколько раз, тогда условия объединяются через логическое **И**.
 -   `--log-level` (`-l`): Уровень логирования (`debug`, `info`, `warn`, `error`). Рекомендуется `info` для отладки фильтров.
+-   `--novofon` (`-n`): Включает трансформацию URL для Novofon (временное решение). См. раздел ниже.
 
 #### Фильтрация (--filter)
 
@@ -146,6 +147,26 @@ go test -v -tags=integration ./...
 *   **Не поддерживаются** списки (Arrays/Lists).
 *   Если указано несколько флагов `--filter`, приложение будет обработано только если оно удовлетворяет **всем** фильтрам.
 
+#### Novofon-трансформация (--novofon)
+
+Временное решение для работы с mirror-репозиториями Novofon. При включении флага `--novofon` выполняется трансформация URL репозиториев:
+
+**Логика:**
+*   Если URL репозитория имеет хост `git.nvfn.ru` и путь начинается с `/deploy/`, то:
+    *   URL заменяется на `https://git.uis.dev/deploy/product.git`
+    *   Путь к сервису получает префикс `stable/` + часть оригинального пути после `/deploy/`
+
+**Пример трансформации:**
+```
+Исходный URL:  https://git.nvfn.ru/deploy/myservice.git
+Исходный path: .
+
+Результат URL:  https://git.uis.dev/deploy/product.git
+Результат path: stable/myservice
+```
+
+Это позволяет работать с основным репозиторием `product.git` вместо недоступных mirror-репозиториев.
+
 #### Пример запуска
 
 Рендерить только приложения из ветки `master`, предназначенные для окружения `prod`:
@@ -156,6 +177,15 @@ go test -v -tags=integration ./...
   --output-dir ./manifests \
   --filter "spec.source.targetRevision==master" \
   --filter "metadata.labels.env==prod" \
+  --log-level info
+```
+
+С включённой Novofon-трансформацией:
+
+```bash
+./roar ./deploy/charts/app-of-apps \
+  --output-dir ./manifests \
+  --novofon \
   --log-level info
 ```
 

@@ -25,6 +25,8 @@ func main() {
 	// Пример: --filter "a==b" --filter "c!=d"
 	pflag.StringSliceVar(&cfg.Filters, "filter", []string{}, "Filter applications by field (e.g. spec.source.targetRevision==master). Can be repeated.")
 
+	pflag.BoolVarP(&cfg.Novofon, "novofon", "n", false, "Enable Novofon URL transformation (temporary workaround)")
+
 	roar := "roar"
 
 	pflag.Usage = func() {

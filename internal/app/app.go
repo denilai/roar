@@ -19,6 +19,7 @@ type Config struct {
 	OutputDir   string
 	LogLevel    string
 	Filters     []string
+	Novofon     bool
 	tempDir_    string
 }
 
@@ -27,6 +28,7 @@ type appState struct {
 	outputDir    string
 	clonedRepos  map[string]string
 	cloneCounter int
+	novofon      bool
 }
 
 func Run(cfg Config) error {
@@ -59,6 +61,7 @@ func Run(cfg Config) error {
 		tempDir:     tempDir,
 		outputDir:   cfg.OutputDir,
 		clonedRepos: make(map[string]string),
+		novofon:     cfg.Novofon,
 	}
 
 	for _, app := range applications {
@@ -94,6 +97,18 @@ func renderAndParseAppOfApps(chartPath string, valuesFiles []string, filters []s
 func processApplication(app argo.Application, state *appState) error {
 	logCtx := logger.Log.WithField("application", app.Name)
 	logCtx.Info("Processing application...")
+
+	// Apply Novofon transformation if enabled
+	if state.novofon {
+		newRepoURL, newPath, transformed := applyNovofonTransform(app.RepoURL, app.Path)
+		if transformed {
+			logCtx.Info("Novofon transformation applied")
+			logCtx.Infof("  Repository: %s -> %s", app.RepoURL, newRepoURL)
+			logCtx.Infof("  Path: %s -> %s", app.Path, newPath)
+			app.RepoURL = newRepoURL
+			app.Path = newPath
+		}
+	}
 
 	werfSetValues := app.Setters
 	if werfSetValues == nil {
@@ -181,4 +196,47 @@ func convertHTTPtoSSH(httpURL string) (string, error) {
 	path := strings.TrimPrefix(parsedURL.Path, "/")
 	sshURL := fmt.Sprintf("git@%s:%s", parsedURL.Host, path)
 	return sshURL, nil
+}
+
+const (
+	novofonSourceHost = "git.nvfn.ru"
+	novofonTargetRepo = "https://git.uis.dev/deploy/product.git"
+	novofonDeployPath = "/deploy/"
+)
+
+// applyNovofonTransform transforms git.nvfn.ru/deploy/* URLs to use
+// git.uis.dev/deploy/product.git with adjusted paths.
+// Returns transformed (repoURL, path, wasTransformed).
+func applyNovofonTransform(repoURL, path string) (string, string, bool) {
+	parsedURL, err := url.Parse(repoURL)
+	if err != nil {
+		return repoURL, path, false
+	}
+
+	// Check if host matches and path starts with /deploy/
+	if parsedURL.Host != novofonSourceHost {
+		return repoURL, path, false
+	}
+
+	if !strings.HasPrefix(parsedURL.Path, novofonDeployPath) {
+		return repoURL, path, false
+	}
+
+	// Extract path after /deploy/
+	// e.g., "/deploy/a/b/../c.git" -> "a/b/../c.git"
+	afterDeploy := strings.TrimPrefix(parsedURL.Path, novofonDeployPath)
+
+	// Remove .git suffix if present
+	// e.g., "a/b/../c.git" -> "a/b/../c"
+	afterDeploy = strings.TrimSuffix(afterDeploy, ".git")
+
+	// Build new path: "stable/{extracted_path}/{original_path}"
+	var newPath string
+	if path == "" || path == "." {
+		newPath = filepath.Join("stable", afterDeploy)
+	} else {
+		newPath = filepath.Join("stable", afterDeploy, path)
+	}
+
+	return novofonTargetRepo, newPath, true
 }

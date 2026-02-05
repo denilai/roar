@@ -50,3 +50,80 @@ func TestConvertHTTPtoSSH(t *testing.T) {
 		})
 	}
 }
+
+func TestApplyNovofonTransform(t *testing.T) {
+	tests := []struct {
+		name            string
+		inputRepoURL    string
+		inputPath       string
+		wantRepoURL     string
+		wantPath        string
+		wantTransformed bool
+	}{
+		{
+			name:            "standard novofon URL with .git",
+			inputRepoURL:    "https://git.nvfn.ru/deploy/a/b/c.git",
+			inputPath:       "service",
+			wantRepoURL:     "https://git.uis.dev/deploy/product.git",
+			wantPath:        "stable/a/b/c/service",
+			wantTransformed: true,
+		},
+		{
+			name:            "novofon URL without .git suffix",
+			inputRepoURL:    "https://git.nvfn.ru/deploy/myproject",
+			inputPath:       "app",
+			wantRepoURL:     "https://git.uis.dev/deploy/product.git",
+			wantPath:        "stable/myproject/app",
+			wantTransformed: true,
+		},
+		{
+			name:            "novofon URL with empty path",
+			inputRepoURL:    "https://git.nvfn.ru/deploy/project.git",
+			inputPath:       "",
+			wantRepoURL:     "https://git.uis.dev/deploy/product.git",
+			wantPath:        "stable/project",
+			wantTransformed: true,
+		},
+		{
+			name:            "novofon URL with dot path",
+			inputRepoURL:    "https://git.nvfn.ru/deploy/project.git",
+			inputPath:       ".",
+			wantRepoURL:     "https://git.uis.dev/deploy/product.git",
+			wantPath:        "stable/project",
+			wantTransformed: true,
+		},
+		{
+			name:            "non-novofon host - no transformation",
+			inputRepoURL:    "https://gitlab.com/org/repo.git",
+			inputPath:       "service",
+			wantRepoURL:     "https://gitlab.com/org/repo.git",
+			wantPath:        "service",
+			wantTransformed: false,
+		},
+		{
+			name:            "novofon host but wrong path prefix - no transformation",
+			inputRepoURL:    "https://git.nvfn.ru/other/project.git",
+			inputPath:       "service",
+			wantRepoURL:     "https://git.nvfn.ru/other/project.git",
+			wantPath:        "service",
+			wantTransformed: false,
+		},
+		{
+			name:            "ssh URL - no transformation",
+			inputRepoURL:    "git@git.nvfn.ru:deploy/project.git",
+			inputPath:       "service",
+			wantRepoURL:     "git@git.nvfn.ru:deploy/project.git",
+			wantPath:        "service",
+			wantTransformed: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotRepoURL, gotPath, gotTransformed := applyNovofonTransform(tt.inputRepoURL, tt.inputPath)
+			require.Equal(t, tt.wantTransformed, gotTransformed)
+			require.Equal(t, tt.wantRepoURL, gotRepoURL)
+			require.Equal(t, tt.wantPath, gotPath)
+		})
+	}
+}
