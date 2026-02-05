@@ -196,7 +196,7 @@ spec:
 		ChartPath: appOfAppsDir,
 		OutputDir: outputDir,
 		tempDir_:  clonesDir,
-		Filter:    "spec.source.targetRevision=master", // Фильтруем только master
+		Filters:   []string{"spec.source.targetRevision==master"}, // Фильтруем только master
 		LogLevel:  "info",
 	}
 
@@ -216,4 +216,191 @@ spec:
 
 	require.Contains(t, cmdLog, "helm template app-prod")
 	require.NotContains(t, cmdLog, "helm template app-dev")
+}
+
+// createFakeGitRepoWithPath создает Git репозиторий с указанной структурой пути.
+func createFakeGitRepoWithPath(t *testing.T, servicePath string) string {
+	repoPath := t.TempDir()
+
+	r, err := git.PlainInit(repoPath, false)
+	require.NoError(t, err)
+
+	w, err := r.Worktree()
+	require.NoError(t, err)
+
+	// Создаем структуру: {servicePath}/.helm/Chart.yaml
+	helmDir := filepath.Join(repoPath, servicePath, ".helm")
+	require.NoError(t, os.MkdirAll(helmDir, 0755))
+	chartContent := "apiVersion: v2\nname: test-chart\nversion: 1.0.0"
+	require.NoError(t, os.WriteFile(filepath.Join(helmDir, "Chart.yaml"), []byte(chartContent), 0644))
+
+	_, err = w.Add(".")
+	require.NoError(t, err)
+
+	_, err = w.Commit("Initial commit", &git.CommitOptions{
+		Author: &object.Signature{
+			Name:  "Test",
+			Email: "test@test.com",
+		},
+	})
+	require.NoError(t, err)
+
+	return repoPath
+}
+
+func TestAppRun_Integration_WithNovofon(t *testing.T) {
+	cmdLogPath, cleanup := setupIntegrationTest(t)
+	defer cleanup()
+
+	testRootDir := t.TempDir()
+	outputDir := filepath.Join(testRootDir, "output")
+	appOfAppsDir := filepath.Join(testRootDir, "app-of-apps-chart")
+	clonesDir := filepath.Join(testRootDir, "clones")
+
+	// Создаем фейковый репозиторий со структурой stable/myservice/.helm/
+	// Это имитирует структуру product.git после Novofon-трансформации
+	fakeProductRepo := createFakeGitRepoWithPath(t, "stable/myservice")
+
+	require.NoError(t, os.MkdirAll(filepath.Join(appOfAppsDir, "templates"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(appOfAppsDir, "Chart.yaml"),
+		[]byte("apiVersion: v2\nname: root-chart\nversion: 0.1.0"), 0644))
+
+	// Шаблон использует локальный путь (имитация git.uis.dev/deploy/product.git)
+	// В реальности Novofon трансформирует git.nvfn.ru -> git.uis.dev,
+	// но в тесте мы используем локальный путь напрямую
+	appOfAppsTemplate := fmt.Sprintf(`
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: novofon-app
+  labels: {env: prod}
+  annotations:
+    rawRepository: "%s"
+    rawPath: "stable/myservice"
+spec:
+  source:
+    targetRevision: master
+    plugin: {env: []}
+`, fakeProductRepo)
+
+	require.NoError(t, os.WriteFile(filepath.Join(appOfAppsDir, "templates", "app.yaml"),
+		[]byte(appOfAppsTemplate), 0644))
+
+	cfg := Config{
+		ChartPath: appOfAppsDir,
+		OutputDir: outputDir,
+		tempDir_:  clonesDir,
+		Novofon:   true, // Включаем Novofon (не повлияет на локальный путь, но проверяет что флаг не ломает работу)
+	}
+
+	err := Run(cfg)
+	require.NoError(t, err)
+
+	// Проверяем что файл создан
+	require.FileExists(t, filepath.Join(outputDir, "prod", "novofon-app.yaml"))
+
+	// Проверяем что helm был вызван с правильным путём
+	cmdLogContent, err := os.ReadFile(cmdLogPath)
+	require.NoError(t, err)
+	cmdLog := string(cmdLogContent)
+
+	require.Contains(t, cmdLog, "helm template novofon-app")
+	require.Contains(t, cmdLog, filepath.Join("stable", "myservice", ".helm"))
+}
+
+func TestAppRun_Integration_NovofonWithMultipleApps(t *testing.T) {
+	cmdLogPath, cleanup := setupIntegrationTest(t)
+	defer cleanup()
+
+	testRootDir := t.TempDir()
+	outputDir := filepath.Join(testRootDir, "output")
+	appOfAppsDir := filepath.Join(testRootDir, "app-of-apps-chart")
+	clonesDir := filepath.Join(testRootDir, "clones")
+
+	// Создаем репозиторий с двумя сервисами
+	fakeProductRepo := t.TempDir()
+	r, err := git.PlainInit(fakeProductRepo, false)
+	require.NoError(t, err)
+	w, err := r.Worktree()
+	require.NoError(t, err)
+
+	// Создаем структуру для двух сервисов
+	for _, svc := range []string{"stable/svc-a", "stable/svc-b"} {
+		helmDir := filepath.Join(fakeProductRepo, svc, ".helm")
+		require.NoError(t, os.MkdirAll(helmDir, 0755))
+		require.NoError(t, os.WriteFile(filepath.Join(helmDir, "Chart.yaml"),
+			[]byte("apiVersion: v2\nname: test\nversion: 1.0.0"), 0644))
+	}
+
+	_, err = w.Add(".")
+	require.NoError(t, err)
+	_, err = w.Commit("Initial commit", &git.CommitOptions{
+		Author: &object.Signature{Name: "Test", Email: "test@test.com"},
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, os.MkdirAll(filepath.Join(appOfAppsDir, "templates"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(appOfAppsDir, "Chart.yaml"),
+		[]byte("apiVersion: v2\nname: root-chart\nversion: 0.1.0"), 0644))
+
+	// Два приложения используют один репозиторий но разные пути
+	appOfAppsTemplate := fmt.Sprintf(`
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app-a
+  labels: {env: prod}
+  annotations:
+    rawRepository: "%[1]s"
+    rawPath: "stable/svc-a"
+spec:
+  source:
+    targetRevision: master
+    plugin: {env: []}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app-b
+  labels: {env: prod}
+  annotations:
+    rawRepository: "%[1]s"
+    rawPath: "stable/svc-b"
+spec:
+  source:
+    targetRevision: master
+    plugin: {env: []}
+`, fakeProductRepo)
+
+	require.NoError(t, os.WriteFile(filepath.Join(appOfAppsDir, "templates", "apps.yaml"),
+		[]byte(appOfAppsTemplate), 0644))
+
+	cfg := Config{
+		ChartPath: appOfAppsDir,
+		OutputDir: outputDir,
+		tempDir_:  clonesDir,
+		Novofon:   true,
+	}
+
+	err = Run(cfg)
+	require.NoError(t, err)
+
+	// Оба файла должны быть созданы
+	require.FileExists(t, filepath.Join(outputDir, "prod", "app-a.yaml"))
+	require.FileExists(t, filepath.Join(outputDir, "prod", "app-b.yaml"))
+
+	// Проверяем что репозиторий был склонирован только один раз (кэширование)
+	cloneDirs, err := os.ReadDir(clonesDir)
+	require.NoError(t, err)
+	require.Len(t, cloneDirs, 1, "Repository should be cloned only once due to caching")
+
+	// Проверяем вызовы helm
+	cmdLogContent, err := os.ReadFile(cmdLogPath)
+	require.NoError(t, err)
+	cmdLog := string(cmdLogContent)
+
+	require.Contains(t, cmdLog, "helm template app-a")
+	require.Contains(t, cmdLog, "helm template app-b")
+	require.Contains(t, cmdLog, filepath.Join("stable", "svc-a", ".helm"))
+	require.Contains(t, cmdLog, filepath.Join("stable", "svc-b", ".helm"))
 }
