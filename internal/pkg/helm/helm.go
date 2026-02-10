@@ -2,6 +2,7 @@
 package helm
 
 import (
+	"bytes"
 	"fmt"
 	"os/exec"
 	"roar/internal/pkg/logger"
@@ -29,10 +30,16 @@ func Template(opts RenderOptions) ([]byte, error) {
 		args = append(args, "--set", setValue)
 	}
 	cmd := exec.Command("helm", args...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 	logger.Log.WithField("cmd", cmd.String()).Info("[CMD]")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("helm template failed: %w\nOutput:\n%s", err, string(output))
+	err := cmd.Run()
+	if stderr.Len() > 0 {
+		logger.Log.Warn(strings.TrimSpace(stderr.String()))
 	}
-	return output, nil
+	if err != nil {
+		return nil, fmt.Errorf("helm template failed: %w\nStderr:\n%s", err, stderr.String())
+	}
+	return stdout.Bytes(), nil
 }

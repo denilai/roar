@@ -248,7 +248,7 @@ func createFakeGitRepoWithPath(t *testing.T, servicePath string) string {
 	return repoPath
 }
 
-func TestAppRun_Integration_WithNovofon(t *testing.T) {
+func TestAppRun_Integration_WithMirror(t *testing.T) {
 	cmdLogPath, cleanup := setupIntegrationTest(t)
 	defer cleanup()
 
@@ -258,7 +258,7 @@ func TestAppRun_Integration_WithNovofon(t *testing.T) {
 	clonesDir := filepath.Join(testRootDir, "clones")
 
 	// Создаем фейковый репозиторий со структурой stable/myservice/.helm/
-	// Это имитирует структуру product.git после Novofon-трансформации
+	// Это имитирует структуру product.git после Mirror-трансформации
 	fakeProductRepo := createFakeGitRepoWithPath(t, "stable/myservice")
 
 	require.NoError(t, os.MkdirAll(filepath.Join(appOfAppsDir, "templates"), 0755))
@@ -266,13 +266,13 @@ func TestAppRun_Integration_WithNovofon(t *testing.T) {
 		[]byte("apiVersion: v2\nname: root-chart\nversion: 0.1.0"), 0644))
 
 	// Шаблон использует локальный путь (имитация git.uis.dev/deploy/product.git)
-	// В реальности Novofon трансформирует git.nvfn.ru -> git.uis.dev,
+	// В реальности Mirror трансформирует git.nvfn.ru -> git.uis.dev,
 	// но в тесте мы используем локальный путь напрямую
 	appOfAppsTemplate := fmt.Sprintf(`
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: novofon-app
+  name: mirror-app
   labels: {env: prod}
   annotations:
     rawRepository: "%s"
@@ -290,25 +290,25 @@ spec:
 		ChartPath: appOfAppsDir,
 		OutputDir: outputDir,
 		tempDir_:  clonesDir,
-		Novofon:   true, // Включаем Novofon (не повлияет на локальный путь, но проверяет что флаг не ломает работу)
+		Mirror:   true, // Включаем Mirror (не повлияет на локальный путь, но проверяет что флаг не ломает работу)
 	}
 
 	err := Run(cfg)
 	require.NoError(t, err)
 
 	// Проверяем что файл создан
-	require.FileExists(t, filepath.Join(outputDir, "prod", "novofon-app.yaml"))
+	require.FileExists(t, filepath.Join(outputDir, "prod", "mirror-app.yaml"))
 
 	// Проверяем что helm был вызван с правильным путём
 	cmdLogContent, err := os.ReadFile(cmdLogPath)
 	require.NoError(t, err)
 	cmdLog := string(cmdLogContent)
 
-	require.Contains(t, cmdLog, "helm template novofon-app")
+	require.Contains(t, cmdLog, "helm template mirror-app")
 	require.Contains(t, cmdLog, filepath.Join("stable", "myservice", ".helm"))
 }
 
-func TestAppRun_Integration_NovofonWithMultipleApps(t *testing.T) {
+func TestAppRun_Integration_MirrorWithMultipleApps(t *testing.T) {
 	cmdLogPath, cleanup := setupIntegrationTest(t)
 	defer cleanup()
 
@@ -379,7 +379,7 @@ spec:
 		ChartPath: appOfAppsDir,
 		OutputDir: outputDir,
 		tempDir_:  clonesDir,
-		Novofon:   true,
+		Mirror:   true,
 	}
 
 	err = Run(cfg)

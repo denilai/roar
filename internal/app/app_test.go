@@ -51,7 +51,7 @@ func TestConvertHTTPtoSSH(t *testing.T) {
 	}
 }
 
-func TestApplyNovofonTransform(t *testing.T) {
+func TestApplyMirrorTransform(t *testing.T) {
 	tests := []struct {
 		name            string
 		inputRepoURL    string
@@ -61,7 +61,7 @@ func TestApplyNovofonTransform(t *testing.T) {
 		wantTransformed bool
 	}{
 		{
-			name:            "standard novofon URL with .git",
+			name:            "standard mirror URL with .git",
 			inputRepoURL:    "https://git.nvfn.ru/deploy/a/b/c.git",
 			inputPath:       "service",
 			wantRepoURL:     "https://git.uis.dev/deploy/product.git",
@@ -69,7 +69,7 @@ func TestApplyNovofonTransform(t *testing.T) {
 			wantTransformed: true,
 		},
 		{
-			name:            "novofon URL without .git suffix",
+			name:            "mirror URL without .git suffix",
 			inputRepoURL:    "https://git.nvfn.ru/deploy/myproject",
 			inputPath:       "app",
 			wantRepoURL:     "https://git.uis.dev/deploy/product.git",
@@ -77,7 +77,7 @@ func TestApplyNovofonTransform(t *testing.T) {
 			wantTransformed: true,
 		},
 		{
-			name:            "novofon URL with empty path",
+			name:            "mirror URL with empty path",
 			inputRepoURL:    "https://git.nvfn.ru/deploy/project.git",
 			inputPath:       "",
 			wantRepoURL:     "https://git.uis.dev/deploy/product.git",
@@ -85,7 +85,7 @@ func TestApplyNovofonTransform(t *testing.T) {
 			wantTransformed: true,
 		},
 		{
-			name:            "novofon URL with dot path",
+			name:            "mirror URL with dot path",
 			inputRepoURL:    "https://git.nvfn.ru/deploy/project.git",
 			inputPath:       ".",
 			wantRepoURL:     "https://git.uis.dev/deploy/product.git",
@@ -93,7 +93,7 @@ func TestApplyNovofonTransform(t *testing.T) {
 			wantTransformed: true,
 		},
 		{
-			name:            "non-novofon host - no transformation",
+			name:            "non-mirror host - no transformation",
 			inputRepoURL:    "https://gitlab.com/org/repo.git",
 			inputPath:       "service",
 			wantRepoURL:     "https://gitlab.com/org/repo.git",
@@ -101,7 +101,7 @@ func TestApplyNovofonTransform(t *testing.T) {
 			wantTransformed: false,
 		},
 		{
-			name:            "novofon host but wrong path prefix - no transformation",
+			name:            "mirror host but wrong path prefix - no transformation",
 			inputRepoURL:    "https://git.nvfn.ru/other/project.git",
 			inputPath:       "service",
 			wantRepoURL:     "https://git.nvfn.ru/other/project.git",
@@ -120,7 +120,7 @@ func TestApplyNovofonTransform(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotRepoURL, gotPath, gotTransformed := applyNovofonTransform(tt.inputRepoURL, tt.inputPath)
+			gotRepoURL, gotPath, gotTransformed := applyMirrorTransform(tt.inputRepoURL, tt.inputPath)
 			require.Equal(t, tt.wantTransformed, gotTransformed)
 			require.Equal(t, tt.wantRepoURL, gotRepoURL)
 			require.Equal(t, tt.wantPath, gotPath)

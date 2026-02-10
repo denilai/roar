@@ -19,7 +19,7 @@ type Config struct {
 	OutputDir   string
 	LogLevel    string
 	Filters     []string
-	Novofon     bool
+	Mirror      bool
 	tempDir_    string
 }
 
@@ -28,7 +28,7 @@ type appState struct {
 	outputDir    string
 	clonedRepos  map[string]string
 	cloneCounter int
-	novofon      bool
+	mirror       bool
 }
 
 func Run(cfg Config) error {
@@ -61,7 +61,7 @@ func Run(cfg Config) error {
 		tempDir:     tempDir,
 		outputDir:   cfg.OutputDir,
 		clonedRepos: make(map[string]string),
-		novofon:     cfg.Novofon,
+		mirror:      cfg.Mirror,
 	}
 
 	for _, app := range applications {
@@ -98,11 +98,11 @@ func processApplication(app argo.Application, state *appState) error {
 	logCtx := logger.Log.WithField("application", app.Name)
 	logCtx.Info("Processing application...")
 
-	// Apply Novofon transformation if enabled
-	if state.novofon {
-		newRepoURL, newPath, transformed := applyNovofonTransform(app.RepoURL, app.Path)
+	// Apply mirror transformation if enabled
+	if state.mirror {
+		newRepoURL, newPath, transformed := applyMirrorTransform(app.RepoURL, app.Path)
 		if transformed {
-			logCtx.Info("Novofon transformation applied")
+			logCtx.Info("Mirror transformation applied")
 			logCtx.Infof("  Repository: %s -> %s", app.RepoURL, newRepoURL)
 			logCtx.Infof("  Path: %s -> %s", app.Path, newPath)
 			app.RepoURL = newRepoURL
@@ -156,7 +156,8 @@ func processApplication(app argo.Application, state *appState) error {
 	appOpts := helm.RenderOptions{ReleaseName: app.Name, ChartPath: appChartPath, ValuesFiles: absoluteValuesFiles, SetValues: werfSetValues}
 	renderedApp, err := helm.Template(appOpts)
 	if err != nil {
-		return fmt.Errorf("failed to render chart: %w", err)
+		logCtx.Errorf("Failed to render chart: %v. Writing empty manifest.", err)
+		renderedApp = []byte{}
 	}
 
 	finalOutputDir := state.outputDir
@@ -199,32 +200,32 @@ func convertHTTPtoSSH(httpURL string) (string, error) {
 }
 
 const (
-	novofonSourceHost = "git.nvfn.ru"
-	novofonTargetRepo = "https://git.uis.dev/deploy/product.git"
-	novofonDeployPath = "/deploy/"
+	mirrorSourceHost = "git.nvfn.ru"
+	mirrorTargetRepo = "https://git.uis.dev/deploy/product.git"
+	mirrorDeployPath = "/deploy/"
 )
 
-// applyNovofonTransform transforms git.nvfn.ru/deploy/* URLs to use
+// applyMirrorTransform transforms git.nvfn.ru/deploy/* URLs to use
 // git.uis.dev/deploy/product.git with adjusted paths.
 // Returns transformed (repoURL, path, wasTransformed).
-func applyNovofonTransform(repoURL, path string) (string, string, bool) {
+func applyMirrorTransform(repoURL, path string) (string, string, bool) {
 	parsedURL, err := url.Parse(repoURL)
 	if err != nil {
 		return repoURL, path, false
 	}
 
 	// Check if host matches and path starts with /deploy/
-	if parsedURL.Host != novofonSourceHost {
+	if parsedURL.Host != mirrorSourceHost {
 		return repoURL, path, false
 	}
 
-	if !strings.HasPrefix(parsedURL.Path, novofonDeployPath) {
+	if !strings.HasPrefix(parsedURL.Path, mirrorDeployPath) {
 		return repoURL, path, false
 	}
 
 	// Extract path after /deploy/
 	// e.g., "/deploy/a/b/../c.git" -> "a/b/../c.git"
-	afterDeploy := strings.TrimPrefix(parsedURL.Path, novofonDeployPath)
+	afterDeploy := strings.TrimPrefix(parsedURL.Path, mirrorDeployPath)
 
 	// Remove .git suffix if present
 	// e.g., "a/b/../c.git" -> "a/b/../c"
@@ -238,5 +239,5 @@ func applyNovofonTransform(repoURL, path string) (string, string, bool) {
 		newPath = filepath.Join("stable", afterDeploy, path)
 	}
 
-	return novofonTargetRepo, newPath, true
+	return mirrorTargetRepo, newPath, true
 }
