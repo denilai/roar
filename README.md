@@ -149,20 +149,31 @@ go test -v -tags=integration ./...
 
 #### Mirror-трансформация (--mirror)
 
-Временное решение для работы с mirror-репозиториями. При включении флага `--mirror` выполняется трансформация URL репозиториев:
+Временное решение для работы с mirror-репозиториями. При включении флага `--mirror` выполняется трансформация URL репозиториев.
 
-**Логика:**
-*   Если URL репозитория имеет хост `git.nvfn.ru` и путь начинается с `/deploy/`, то:
+**Поддерживаются два варианта:**
+
+1. **Хост `git.nvfn.ru`, путь начинается с `/deploy/`:**
     *   URL заменяется на `https://git.uis.dev/deploy/product.git`
-    *   Путь к сервису получает префикс `stable/` + часть оригинального пути после `/deploy/`
+    *   Путь к сервису: префикс `stable/` + часть оригинального пути после `/deploy/`
 
-**Пример трансформации:**
+2. **Хост `git.octe.cc`, путь начинается с `/service/`:**
+    *   URL заменяется на `https://git.uis.dev/deploy/product.git`
+    *   Путь к сервису: префикс `stable/` + часть оригинального пути после `/service/` (как в product-репозитории).
+
+**Примеры трансформации:**
 ```
+# git.nvfn.ru
 Исходный URL:  https://git.nvfn.ru/deploy/myservice.git
 Исходный path: .
-
 Результат URL:  https://git.uis.dev/deploy/product.git
 Результат path: stable/myservice
+
+# git.octe.cc (путь после /service/ без stable — в product он под stable/)
+Исходный URL:  https://git.octe.cc/service/mrkt/search-engine.git
+Исходный path: .
+Результат URL:  https://git.uis.dev/deploy/product.git
+Результат path: stable/mrkt/search-engine
 ```
 
 Это позволяет работать с основным репозиторием `product.git` вместо недоступных mirror-репозиториев.

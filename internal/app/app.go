@@ -200,13 +200,17 @@ func convertHTTPtoSSH(httpURL string) (string, error) {
 }
 
 const (
-	mirrorSourceHost = "git.nvfn.ru"
-	mirrorTargetRepo = "https://git.uis.dev/deploy/product.git"
-	mirrorDeployPath = "/deploy/"
+	mirrorSourceHost   = "git.nvfn.ru"
+	mirrorSourceHost2  = "git.octe.cc"
+	mirrorTargetRepo   = "https://git.uis.dev/deploy/product.git"
+	mirrorDeployPath   = "/deploy/"
+	mirrorServicePath  = "/service/"
 )
 
-// applyMirrorTransform transforms git.nvfn.ru/deploy/* URLs to use
-// git.uis.dev/deploy/product.git with adjusted paths.
+// applyMirrorTransform transforms mirror URLs to use git.uis.dev/deploy/product.git.
+// Supports two sources:
+//   - git.nvfn.ru/deploy/* -> product.git, path "stable/{path after /deploy/}/..."
+//   - git.octe.cc/service/* -> product.git, path "stable/{path after /service/}/..."
 // Returns transformed (repoURL, path, wasTransformed).
 func applyMirrorTransform(repoURL, path string) (string, string, bool) {
 	parsedURL, err := url.Parse(repoURL)
@@ -214,30 +218,32 @@ func applyMirrorTransform(repoURL, path string) (string, string, bool) {
 		return repoURL, path, false
 	}
 
-	// Check if host matches and path starts with /deploy/
-	if parsedURL.Host != mirrorSourceHost {
-		return repoURL, path, false
+	// git.nvfn.ru/deploy/* -> product.git, prefix "stable/"
+	if parsedURL.Host == mirrorSourceHost && strings.HasPrefix(parsedURL.Path, mirrorDeployPath) {
+		afterDeploy := strings.TrimPrefix(parsedURL.Path, mirrorDeployPath)
+		afterDeploy = strings.TrimSuffix(afterDeploy, ".git")
+		var newPath string
+		if path == "" || path == "." {
+			newPath = filepath.Join("stable", afterDeploy)
+		} else {
+			newPath = filepath.Join("stable", afterDeploy, path)
+		}
+		return mirrorTargetRepo, newPath, true
 	}
 
-	if !strings.HasPrefix(parsedURL.Path, mirrorDeployPath) {
-		return repoURL, path, false
+	// git.octe.cc/service/* -> product.git; path = stable/ + (path after /service/), same layout as product repo
+	if parsedURL.Host == mirrorSourceHost2 && strings.HasPrefix(parsedURL.Path, mirrorServicePath) {
+		afterService := strings.TrimPrefix(parsedURL.Path, mirrorServicePath)
+		afterService = strings.TrimSuffix(afterService, ".git")
+		afterService = strings.Trim(afterService, "/")
+		var newPath string
+		if path == "" || path == "." {
+			newPath = filepath.Join("stable", afterService)
+		} else {
+			newPath = filepath.Join("stable", afterService, path)
+		}
+		return mirrorTargetRepo, newPath, true
 	}
 
-	// Extract path after /deploy/
-	// e.g., "/deploy/a/b/../c.git" -> "a/b/../c.git"
-	afterDeploy := strings.TrimPrefix(parsedURL.Path, mirrorDeployPath)
-
-	// Remove .git suffix if present
-	// e.g., "a/b/../c.git" -> "a/b/../c"
-	afterDeploy = strings.TrimSuffix(afterDeploy, ".git")
-
-	// Build new path: "stable/{extracted_path}/{original_path}"
-	var newPath string
-	if path == "" || path == "." {
-		newPath = filepath.Join("stable", afterDeploy)
-	} else {
-		newPath = filepath.Join("stable", afterDeploy, path)
-	}
-
-	return mirrorTargetRepo, newPath, true
+	return repoURL, path, false
 }
