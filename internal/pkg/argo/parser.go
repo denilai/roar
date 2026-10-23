@@ -15,11 +15,14 @@ import (
 )
 
 type Application struct {
-	Name           string
-	Instance       string
-	Env            string
-	RepoURL        string
-	Path           string
+	Name     string
+	Instance string
+	Env      string
+	RepoURL  string
+	Path     string
+	// SourcePath — spec.source.path внутри зеркала (например .helm). Задан, только если Path взят из rawPath:
+	// тогда чарт и файлы значений лежат в Path/SourcePath.
+	SourcePath     string
 	TargetRevision string
 	Setters        map[string]string
 	ValuesFiles    []string
@@ -164,6 +167,37 @@ func newApplicationFromRaw(raw rawApplication, logCtx *logrus.Entry) (Applicatio
 		}
 	}
 
+	// Переменные стендов: корень argo-stack2 (WERF_ENV, WERF_VALUES_INSTANCE) и apps (HELM_ARGS, HELM_SET).
+	if raw.Spec.Source.Plugin != nil {
+		werfEnv, instanceFile := "", ""
+		for _, envVar := range raw.Spec.Source.Plugin.Env {
+			switch envVar.Name {
+			case "WERF_ENV":
+				werfEnv = envVar.Value
+			case "WERF_VALUES_INSTANCE":
+				instanceFile = envVar.Value
+			case "HELM_ARGS", "HELM_SET":
+				files, sets := parseHelmArgs(envVar.Value)
+				app.ValuesFiles = append(app.ValuesFiles, files...)
+				for key, value := range sets {
+					app.Setters[key] = value
+				}
+			}
+		}
+		if instanceFile != "" {
+			app.ValuesFiles = append(app.ValuesFiles, instanceFile)
+		}
+		if envFromPlugin == "" {
+			envFromPlugin = werfEnv
+		}
+		if envFromPlugin == "" {
+			envFromPlugin = app.Setters["global.env"]
+		}
+		if instanceFromPlugin == "" {
+			instanceFromPlugin = app.Setters["global.instance"]
+		}
+	}
+
 	if instanceFromLabel != "" && instanceFromPlugin != "" && instanceFromLabel != instanceFromPlugin {
 		return Application{}, fmt.Errorf("conflicting values for 'instance': label is '%s', plugin.env is '%s'", instanceFromLabel, instanceFromPlugin)
 	}
@@ -202,6 +236,9 @@ func newApplicationFromRaw(raw rawApplication, logCtx *logrus.Entry) (Applicatio
 		}
 	}
 	app.Path = path
+	if ok {
+		app.SourcePath = raw.Spec.Source.Path
+	}
 
 	return app, nil
 }
@@ -235,6 +272,28 @@ func extractAndSortValuesFiles(envVars []EnvVar, logCtx *logrus.Entry) []string 
 	}
 
 	return sortedValuesFiles
+}
+
+// parseHelmArgs разбирает строку вида "-f a.yaml --set k=v -f b.yaml" (HELM_ARGS / HELM_SET).
+// Возвращает файлы значений в порядке появления и словарь --set.
+func parseHelmArgs(s string) ([]string, map[string]string) {
+	files := []string{}
+	sets := make(map[string]string)
+	tokens := strings.Fields(s)
+	for i := 0; i < len(tokens); i++ {
+		switch {
+		case tokens[i] == "-f" && i+1 < len(tokens):
+			files = append(files, tokens[i+1])
+			i++
+		case tokens[i] == "--set" && i+1 < len(tokens):
+			key, value := extractKeyValueFromWerfSet(tokens[i+1])
+			if key != "" {
+				sets[key] = value
+			}
+			i++
+		}
+	}
+	return files, sets
 }
 
 func extractKeyValueFromWerfSet(s string) (string, string) {

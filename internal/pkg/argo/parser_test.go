@@ -368,6 +368,7 @@ func TestNewApplicationFromRaw(t *testing.T) {
 				Name:           "test-app",
 				RepoURL:        "https://anno.repo",
 				Path:           "anno/path",
+				SourcePath:     "spec/path",
 				TargetRevision: "main",
 				Setters:        map[string]string{},
 				ValuesFiles:    []string{},

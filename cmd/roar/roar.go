@@ -26,6 +26,7 @@ func main() {
 	pflag.StringSliceVar(&cfg.Filters, "filter", []string{}, "Filter applications by field (e.g. spec.source.targetRevision==master). Can be repeated.")
 
 	pflag.BoolVarP(&cfg.Mirror, "mirror", "m", false, "Enable mirror URL transformation (temporary workaround)")
+	pflag.IntVarP(&cfg.Jobs, "jobs", "j", 1, "Parallel workers for applications at each level")
 
 	roar := "roar"
 
